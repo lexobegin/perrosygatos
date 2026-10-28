@@ -24,6 +24,7 @@
       ============================================================
     -->
 
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='16'>🐶</text></svg>">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
 
     <style>
@@ -56,7 +57,7 @@
             <video id="video" playsinline autoplay style="width: 1px;"></video>
             <button class="btn btn-primary mb-2" id="cambiar-camara" onclick="cambiarCamara();">Cambiar camara</button>
             <canvas id="canvas" width="400" height="400" style="max-width: 100%;"></canvas>
-            <canvas id="otrocanvas" width="150" height="150" style="display: none"></canvas>
+            <canvas id="otrocanvas" width="100" height="100" style="display: none"></canvas>
             <div id="resultado"></div>
           </div>
         </div>
@@ -183,28 +184,30 @@
       setTimeout(procesarCamara, 20);
     }
 
-    // Clasifica cualquier canvas de 100x100 y devuelve la probabilidad cruda
-    // (0 = gato, 1 = perro). Misma conversión a gris que en el entrenamiento.
+    // Clasifica cualquier canvas cuadrado de 100x100 y devuelve la probabilidad
+    // cruda (0 = gato, 1 = perro). Misma conversión a gris que en el entrenamiento.
     function clasificarDesde(canvasOrigen) {
       var ctx2 = canvasOrigen.getContext("2d");
-      var imgData = ctx2.getImageData(0, 0, canvasOrigen.width, canvasOrigen.height);
+      var ancho = canvasOrigen.width;   // debe ser 100: tamaño con el que se entrenó
+      var alto = canvasOrigen.height;   // debe ser 100
+      var imgData = ctx2.getImageData(0, 0, ancho, alto);
 
       var arr = [];
-      var arr100 = [];
 
-      for (var p=0; p < imgData.data.length; p+= 4) {
-        var rojo = imgData.data[p] / 255;
-        var verde = imgData.data[p+1] / 255;
-        var azul = imgData.data[p+2] / 255;
+      for (var y = 0; y < alto; y++) {
+        var fila = [];
+        for (var x = 0; x < ancho; x++) {
+          var p = (y * ancho + x) * 4;
+          var rojo = imgData.data[p] / 255;
+          var verde = imgData.data[p+1] / 255;
+          var azul = imgData.data[p+2] / 255;
 
-        // Mismos pesos que tf.image.rgb_to_grayscale en el entrenamiento
-        var gris = (0.2989 * rojo) + (0.587 * verde) + (0.114 * azul);
+          // Mismos pesos que tf.image.rgb_to_grayscale en el entrenamiento
+          var gris = (0.2989 * rojo) + (0.587 * verde) + (0.114 * azul);
 
-        arr100.push([gris]);
-        if (arr100.length == 100) {
-          arr.push(arr100);
-          arr100 = [];
+          fila.push([gris]);
         }
+        arr.push(fila);
       }
 
       arr = [arr];
