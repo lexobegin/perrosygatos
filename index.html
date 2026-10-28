@@ -105,7 +105,14 @@
     (async() => {
       document.getElementById("resultado").innerText = "Cargando modelo...";
       try {
-        modelo = await tf.loadLayersModel("model.json");
+        // Ruta ABSOLUTA del modelo: TensorFlow.js arma las URLs de los
+        // archivos .bin concatenando "carpeta de model.json + nombre".
+        // Si se le pasa solo "model.json" (sin carpeta) arma rutas de la
+        // raiz del sitio y da 404 al desplegar en subcarpetas (ej. GitHub
+        // Pages /perrosygatos/). Con URL absoluta funciona en cualquier
+        // servidor y carpeta.
+        var urlModelo = new URL("model.json", window.location.href).href;
+        modelo = await tf.loadLayersModel(urlModelo);
         document.getElementById("resultado").innerText = "Modelo cargado";
         console.log("Modelo cargado");
       } catch (e) {
