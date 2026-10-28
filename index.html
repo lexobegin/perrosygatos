@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#14162b">
     <title>Perros y Gatos — Clasificador con TensorFlow.js</title>
 
     <!--
@@ -28,61 +29,114 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
 
     <style>
-      #resultado {
-        font-weight: bold;
-        font-size: 6rem;
-        text-align: center;
+      :root { color-scheme: dark; }
+      body {
+        background: radial-gradient(1200px 800px at 50% -10%, #2a1b5e 0%, #14162b 45%, #0b0d1a 100%);
+        background-attachment: fixed;
+        color: #f2f3f8;
+        min-height: 100vh;
       }
-      #resultado small {
-        font-size: 1.5rem;
-        color: #555;
-        font-weight: normal;
+      .texto-suave { color: #9aa1b5; }
+      .titulo-ia {
+        font-weight: 900;
+        background: linear-gradient(90deg, #ffb347, #ff5e62, #d64bff);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
       }
+      .tarjeta {
+        background: rgba(255, 255, 255, .06);
+        border: 1px solid rgba(255, 255, 255, .12);
+        border-radius: 24px;
+      }
+      #canvas {
+        max-width: 100%;
+        border-radius: 20px;
+        border: 2px solid rgba(255, 255, 255, .18);
+        box-shadow: 0 10px 40px rgba(214, 75, 255, .25);
+      }
+      .emoji-grande { font-size: 5.2rem; line-height: 1; }
+      .palabra-grande { font-size: 3rem; font-weight: 900; }
+      .emoji-chico { font-size: 2.6rem; line-height: 1; }
+      .palabra-chica { font-size: 1.8rem; font-weight: 800; }
+      .barra-confianza {
+        height: 16px;
+        max-width: 280px;
+        margin: .6rem auto .35rem;
+        background: rgba(255, 255, 255, .12);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .barra-confianza > div {
+        height: 100%;
+        width: 0%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #22e07b, #a8ff5e);
+        transition: width .25s ease;
+      }
+      .barra-confianza > div.barra-perro {
+        background: linear-gradient(90deg, #ff9966, #ff5e62);
+      }
+      @keyframes pulso {
+        0%   { transform: scale(1); }
+        45%  { transform: scale(1.18); }
+        100% { transform: scale(1); }
+      }
+      .pulso { animation: pulso .45s ease; }
+      .btn-ia {
+        background: linear-gradient(90deg, #7b2ff7, #d64bff);
+        border: none;
+        color: #fff;
+        font-weight: 700;
+        border-radius: 999px;
+      }
+      .btn-ia:hover, .btn-ia:focus { color: #fff; filter: brightness(1.12); }
     </style>
   </head>
   <body>
 
     <main>
-      <div class="px-4 py-2 my-2 text-center border-bottom">
-        <h1 class="display-5 fw-bold">Perros y gatos 🐶🐱</h1>
-        <div class="col-lg-6 mx-auto">
-          <p class="lead mb-0">Clasificaci&oacute;n de im&aacute;genes (Perro o Gato) usando la c&aacute;mara web con TensorFlow.js</p>
-          <p class="lead mb-4">Necesitas <b>model.json</b> y los archivos <b>group1-shard*.bin</b> en esta misma carpeta</p>
-        </div>
+      <div class="px-3 pt-4 pb-2 text-center">
+        <h1 class="titulo-ia display-5 mb-1">Perros y Gatos 🐶🐱</h1>
+        <p class="texto-suave mb-0">Clasificador en tiempo real con IA &middot; TensorFlow.js &middot; 100% en tu navegador</p>
       </div>
 
-      <div class="container mt-5">
-        <div class="row">
-          <div class="col-12 col-md-4 offset-md-4 text-center">
-            <video id="video" playsinline autoplay style="width: 1px;"></video>
-            <button class="btn btn-primary mb-2" id="cambiar-camara" onclick="cambiarCamara();">Cambiar camara</button>
-            <canvas id="canvas" width="400" height="400" style="max-width: 100%;"></canvas>
-            <canvas id="otrocanvas" width="100" height="100" style="display: none"></canvas>
-            <div id="resultado"></div>
+      <div class="container mt-3 mb-4">
+        <div class="row justify-content-center">
+          <div class="col-12 col-md-6 col-lg-5">
+            <div class="tarjeta text-center p-3 p-md-4">
+              <video id="video" playsinline autoplay style="width: 1px;"></video>
+              <canvas id="canvas" width="400" height="400"></canvas>
+              <canvas id="otrocanvas" width="100" height="100" style="display: none"></canvas>
+              <div id="resultado" class="mt-3">
+                <div class="emoji-grande" id="res-emoji">🤖</div>
+                <div class="palabra-grande" id="res-palabra">Cargando…</div>
+                <div class="barra-confianza"><div id="res-barra"></div></div>
+                <div class="texto-suave" id="res-conf">preparando modelo…</div>
+              </div>
+              <button class="btn btn-ia btn-lg w-100 mt-3" id="cambiar-camara" onclick="cambiarCamara();">🔄 Cambiar cámara</button>
+            </div>
           </div>
         </div>
       </div>
 
       <div class="container mb-4">
-        <div class="row">
-          <div class="col-12 col-md-6 offset-md-3 text-center border-top pt-4">
-            <p class="mb-2"><b>Prueba con una foto</b> (la forma m&aacute;s confiable de evaluar el modelo):</p>
-            <input type="file" id="foto-input" accept="image/*" class="form-control mb-2">
-            <div id="resultado-foto" style="font-size: 1.4rem; font-weight: bold; min-height: 2.2rem;"></div>
-            <p class="text-muted small mb-0">El modelo fue entrenado con fotos de primer plano (dataset cats vs dogs): mu&eacute;strale una foto de un perro o gato ocupando casi toda la pantalla, o s&uacute;belas aqu&iacute; directamente.</p>
+        <div class="row justify-content-center">
+          <div class="col-12 col-md-6 col-lg-5">
+            <div class="tarjeta text-center p-3 p-md-4">
+              <p class="mb-2 fw-bold">📤 Prueba con una foto</p>
+              <input type="file" id="foto-input" accept="image/*" class="form-control form-control-lg mb-3">
+              <div id="resultado-foto" style="min-height: 4.5rem;"></div>
+              <p class="texto-suave small mb-0">El modelo se entrenó con fotos de primer plano: muéstrale una foto de un perro o gato ocupando casi toda la pantalla, o súbela aquí.</p>
+            </div>
           </div>
         </div>
       </div>
       <canvas id="canvasfoto" width="100" height="100" style="display: none"></canvas>
 
-      <div class="bg-dark text-secondary mt-5 px-4 py-2 text-center">
-        <div class="py-5">
-          <h1 class="display-5 fw-bold text-white">Clasificador Perros y Gatos</h1>
-          <div class="col-lg-6 mx-auto">
-            <p class="fs-5 mb-4">CNN entrenada en Google Colab y convertida a TensorFlow.js &middot; Basado en el tutorial de Ringa Tech</p>
-          </div>
-        </div>
-      </div>
+      <footer class="text-center py-4 mt-2">
+        <p class="texto-suave small mb-0">CNN entrenada en Google Colab &middot; Convertida a TensorFlow.js &middot; Basado en el tutorial de Ringa Tech</p>
+      </footer>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
@@ -104,7 +158,9 @@
     var modelo = null;
 
     (async() => {
-      document.getElementById("resultado").innerText = "Cargando modelo...";
+      var resPalabra = document.getElementById("res-palabra");
+      var resConf = document.getElementById("res-conf");
+      resPalabra.textContent = "Cargando modelo…";
       try {
         // Ruta ABSOLUTA del modelo: TensorFlow.js arma las URLs de los
         // archivos .bin concatenando "carpeta de model.json + nombre".
@@ -114,10 +170,12 @@
         // servidor y carpeta.
         var urlModelo = new URL("model.json", window.location.href).href;
         modelo = await tf.loadLayersModel(urlModelo);
-        document.getElementById("resultado").innerText = "Modelo cargado";
+        resPalabra.textContent = "Modelo listo ✅";
+        resConf.textContent = "iniciando cámara…";
         console.log("Modelo cargado");
       } catch (e) {
-        document.getElementById("resultado").innerText = "Error cargando model.json";
+        resPalabra.textContent = "Error cargando modelo";
+        resConf.textContent = "revisa que model.json esté junto a index.html";
         console.error("No se pudo cargar model.json. Revisa que este junto a index.html", e);
       }
     })();
@@ -226,6 +284,40 @@
     // últimas 7 predicciones para que el texto no parpadee cada 150 ms
     var historial = [];
 
+    // Pinta el resultado en la interfaz: emoji gigante + palabra + barra
+    // de confianza con color distinto para perro (naranja) y gato (verde)
+    function pintarResultado(prob, destino, chico) {
+      var esPerro = prob > .5;
+      var emoji = esPerro ? "🐶" : "🐱";
+      var palabra = esPerro ? "Perro" : "Gato";
+      var confianza = Math.round((esPerro ? prob : 1 - prob) * 100);
+      var claseEmoji = chico ? "emoji-chico" : "emoji-grande";
+      var clasePalabra = chico ? "palabra-chica" : "palabra-grande";
+      var claseBarra = esPerro ? "barra-perro" : "";
+
+      if (destino == "resultado") {
+        var emojiEl = document.getElementById("res-emoji");
+        var palabraEl = document.getElementById("res-palabra");
+        if (palabraEl.textContent != palabra) {
+          emojiEl.textContent = emoji;
+          palabraEl.textContent = palabra;
+          emojiEl.classList.remove("pulso");
+          void emojiEl.offsetWidth; // reinicia la animación de pulso
+          emojiEl.classList.add("pulso");
+        }
+        var barra = document.getElementById("res-barra");
+        barra.className = claseBarra;
+        barra.style.width = confianza + "%";
+        document.getElementById("res-conf").textContent = confianza + "% de confianza";
+      } else {
+        document.getElementById("resultado-foto").innerHTML =
+          '<div class="' + claseEmoji + '">' + emoji + '</div>' +
+          '<div class="' + clasePalabra + '">' + palabra + '</div>' +
+          '<div class="barra-confianza"><div class="' + claseBarra + '" style="width:' + confianza + '%"></div></div>' +
+          '<div class="texto-suave small">' + confianza + '% &middot; prob=' + prob.toFixed(4) + '</div>';
+      }
+    }
+
     function predecir() {
       if (modelo != null) {
         resample_single(canvas, 100, 100, otrocanvas);
@@ -237,12 +329,7 @@
         var ordenado = historial.slice().sort();
         var probEstable = ordenado[Math.floor(ordenado.length / 2)];
 
-        var respuesta = (probEstable <= .5) ? "Gato" : "Perro";
-        var confianza = Math.round((probEstable <= .5 ? (1 - probEstable) : probEstable) * 100);
-
-        document.getElementById("resultado").innerHTML =
-          respuesta + "<br><small>" + confianza + "%</small>";
-
+        pintarResultado(probEstable, "resultado", false);
       }
 
       setTimeout(predecir, 150);
@@ -270,11 +357,7 @@
         cf.drawImage(img, sx, sy, lado, lado, 0, 0, 100, 100);
 
         var prob = clasificarDesde(canvasfoto);
-        var respuesta = (prob <= .5) ? "Gato" : "Perro";
-        var confianza = Math.round((prob <= .5 ? (1 - prob) : prob) * 100);
-
-        document.getElementById("resultado-foto").innerHTML =
-          respuesta + " (" + confianza + "%) <small class='text-muted'>prob=" + prob.toFixed(4) + "</small>";
+        pintarResultado(prob, "resultado-foto", true);
         URL.revokeObjectURL(url);
       };
       img.onerror = function() {
