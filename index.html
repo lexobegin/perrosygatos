@@ -62,6 +62,18 @@
         </div>
       </div>
 
+      <div class="container mb-4">
+        <div class="row">
+          <div class="col-12 col-md-6 offset-md-3 text-center border-top pt-4">
+            <p class="mb-2"><b>Prueba con una foto</b> (la forma m&aacute;s confiable de evaluar el modelo):</p>
+            <input type="file" id="foto-input" accept="image/*" class="form-control mb-2">
+            <div id="resultado-foto" style="font-size: 1.4rem; font-weight: bold; min-height: 2.2rem;"></div>
+            <p class="text-muted small mb-0">El modelo fue entrenado con fotos de primer plano (dataset cats vs dogs): mu&eacute;strale una foto de un perro o gato ocupando casi toda la pantalla, o s&uacute;belas aqu&iacute; directamente.</p>
+          </div>
+        </div>
+      </div>
+      <canvas id="canvasfoto" width="100" height="100" style="display: none"></canvas>
+
       <div class="bg-dark text-secondary mt-5 px-4 py-2 text-center">
         <div class="py-5">
           <h1 class="display-5 fw-bold text-white">Clasificador Perros y Gatos</h1>
@@ -83,6 +95,7 @@
     var video = document.getElementById("video");
     var canvas = document.getElementById("canvas");
     var otrocanvas = document.getElementById("otrocanvas");
+    var canvasfoto = document.getElementById("canvasfoto");
     var ctx = canvas.getContext("2d");
     var currentStream = null;
     var facingMode = "user";
@@ -163,44 +176,59 @@
       setTimeout(procesarCamara, 20);
     }
 
+    // Clasifica cualquier canvas de 100x100 y devuelve la probabilidad cruda
+    // (0 = gato, 1 = perro). Misma conversión a gris que en el entrenamiento.
+    function clasificarDesde(canvasOrigen) {
+      var ctx2 = canvasOrigen.getContext("2d");
+      var imgData = ctx2.getImageData(0, 0, canvasOrigen.width, canvasOrigen.height);
+
+      var arr = [];
+      var arr100 = [];
+
+      for (var p=0; p < imgData.data.length; p+= 4) {
+        var rojo = imgData.data[p] / 255;
+        var verde = imgData.data[p+1] / 255;
+        var azul = imgData.data[p+2] / 255;
+
+        // Mismos pesos que tf.image.rgb_to_grayscale en el entrenamiento
+        var gris = (0.2989 * rojo) + (0.587 * verde) + (0.114 * azul);
+
+        arr100.push([gris]);
+        if (arr100.length == 100) {
+          arr.push(arr100);
+          arr100 = [];
+        }
+      }
+
+      arr = [arr];
+
+      var tensor = tf.tensor4d(arr);
+      var salida = modelo.predict(tensor);
+      var resultado = salida.dataSync();
+      // Liberar memoria: esta funcion corre ~6 veces por segundo
+      salida.dispose();
+      tensor.dispose();
+
+      return resultado[0];
+    }
+
+    // Historial para estabilizar el resultado en vivo: usa la mediana de las
+    // últimas 7 predicciones para que el texto no parpadee cada 150 ms
+    var historial = [];
+
     function predecir() {
       if (modelo != null) {
         resample_single(canvas, 100, 100, otrocanvas);
 
-        //Hacer la predicción
-        var ctx2 = otrocanvas.getContext("2d");
-        var imgData = ctx2.getImageData(0,0, 100, 100);
+        var prob = clasificarDesde(otrocanvas);
 
-        var arr = [];
-        var arr100 = [];
+        historial.push(prob);
+        if (historial.length > 7) historial.shift();
+        var ordenado = historial.slice().sort();
+        var probEstable = ordenado[Math.floor(ordenado.length / 2)];
 
-        for (var p=0; p < imgData.data.length; p+= 4) {
-          var rojo = imgData.data[p] / 255;
-          var verde = imgData.data[p+1] / 255;
-          var azul = imgData.data[p+2] / 255;
-
-          // Mismos pesos que tf.image.rgb_to_grayscale en el entrenamiento
-          var gris = (0.2989 * rojo) + (0.587 * verde) + (0.114 * azul);
-
-          arr100.push([gris]);
-          if (arr100.length == 100) {
-            arr.push(arr100);
-            arr100 = [];
-          }
-        }
-
-        arr = [arr];
-
-        var tensor = tf.tensor4d(arr);
-        var salida = modelo.predict(tensor);
-        var resultado = salida.dataSync();
-        // Liberar memoria: esta funcion corre ~6 veces por segundo
-        salida.dispose();
-        tensor.dispose();
-
-        var prob = resultado[0];
-        var respuesta = (prob <= .5) ? "Gato" : "Perro";
-        var confianza = Math.round((prob <= .5 ? (1 - prob) : prob) * 100);
+        var respuesta = (probEstable <= .5) ? "Gato" : "Perro";
+        var confianza = Math.round((probEstable <= .5 ? (1 - probEstable) : probEstable) * 100);
 
         document.getElementById("resultado").innerHTML =
           respuesta + "<br><small>" + confianza + "%</small>";
@@ -209,6 +237,42 @@
 
       setTimeout(predecir, 150);
     }
+
+    // ---- Prueba con una foto (botón de archivo) ----
+    document.getElementById("foto-input").addEventListener("change", function(e) {
+      var archivo = e.target.files[0];
+      if (!archivo) return;
+      if (modelo == null) {
+        document.getElementById("resultado-foto").innerText = "El modelo aún se está cargando, espera unos segundos e intenta de nuevo";
+        return;
+      }
+
+      var url = URL.createObjectURL(archivo);
+      var img = new Image();
+      img.onload = function() {
+        // Recorte cuadrado centrado (como las fotos del dataset) y resize a 100x100
+        var cf = canvasfoto.getContext("2d");
+        var lado = Math.min(img.width, img.height);
+        var sx = (img.width - lado) / 2;
+        var sy = (img.height - lado) / 2;
+        cf.fillStyle = "#ffffff";
+        cf.fillRect(0, 0, 100, 100);
+        cf.drawImage(img, sx, sy, lado, lado, 0, 0, 100, 100);
+
+        var prob = clasificarDesde(canvasfoto);
+        var respuesta = (prob <= .5) ? "Gato" : "Perro";
+        var confianza = Math.round((prob <= .5 ? (1 - prob) : prob) * 100);
+
+        document.getElementById("resultado-foto").innerHTML =
+          respuesta + " (" + confianza + "%) <small class='text-muted'>prob=" + prob.toFixed(4) + "</small>";
+        URL.revokeObjectURL(url);
+      };
+      img.onerror = function() {
+        document.getElementById("resultado-foto").innerText = "No se pudo leer la imagen";
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    });
 
     /**
        * Hermite resize - fast image resize/resample using Hermite filter. 1 cpu version!
