@@ -4,44 +4,46 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#14162b">
-    <title>¿Perro o Gato? — Detector con IA en el navegador</title>
+    <title>Perros y Gatos — Clasificador con TensorFlow.js</title>
 
     <!--
       ============================================================
       CÓMO USAR ESTA PÁGINA
-      1. Descomprime el ZIP que genera el notebook (perrosygatos.ipynb)
-         en ESTA MISMA carpeta. Quedan juntos: index.html + model.json
-         + group1-shard*.bin
-      2. Sirve la carpeta con un servidor local (NO abras el index.html
-         con doble clic: la cámara y la carga del modelo no funcionan
-         en file://). Doble clic en iniciar_servidor.bat (Windows) o
-         en una terminal:  python -m http.server 8000
+      1. Copia en ESTA MISMA carpeta: model.json y group1-shard*.bin
+         (vienen del tfjs.zip que genera el notebook de Colab).
+      2. Sirve la carpeta con un servidor local (NO abras con doble
+         clic: la cámara no funciona en file://):
+            python -m http.server 8000        (o iniciar_servidor.bat)
       3. Abre http://localhost:8000
-      4. Para probar en el celular:  ngrok http 8000  y abre la URL
-         https://... que te da ngrok (la cámara exige HTTPS).
-      5. Para PUBLICAR (tarea entregable): sube index.html + model.json
-         + group1-shard*.bin a un repo público de GitHub (raíz del
-         repo) y activa Settings > Pages. La página carga el modelo
-         con rutas relativas, así que funciona igual en
-         usuario.github.io/repo/ que en localhost.
+      4. Para probar en el celular:  ngrok http 8000
+         y abre la URL https://... que te da ngrok.
+      5. Para PUBLICAR (tarea entregable): sube este index.html +
+         model.json + group1-shard*.bin a un repo público de GitHub
+         (raíz del repo) y activa Settings > Pages. También funciona
+         importando el repo en vercel.com > Add New Project > Deploy.
+         La cámara funciona porque ambos sirven por HTTPS.
+      6. VOZ: cuando la detección llega a 80% o más de confianza la
+         página dice en voz alta "¡Perro!" o "¡Gato!". Se silencia con
+         el interruptor (queda guardado) y tocar el resultado grande
+         repite el último anuncio.
       ============================================================
     -->
 
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='16'>🐕</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='16'>🐶</text></svg>">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
 
     <style>
       :root { color-scheme: dark; }
       body {
-        background: radial-gradient(1200px 800px at 50% -10%, #7a1f3d 0%, #2a1230 45%, #120a1c 100%);
+        background: radial-gradient(1200px 800px at 50% -10%, #2a1b5e 0%, #14162b 45%, #0b0d1a 100%);
         background-attachment: fixed;
-        color: #f4f0f8;
+        color: #f2f3f8;
         min-height: 100vh;
       }
-      .texto-suave { color: #b5a8c4; }
+      .texto-suave { color: #9aa1b5; }
       .titulo-ia {
         font-weight: 900;
-        background: linear-gradient(90deg, #ffd166, #ff6b9d, #a26bff);
+        background: linear-gradient(90deg, #ffb347, #ff5e62, #d64bff);
         -webkit-background-clip: text;
         background-clip: text;
         color: transparent;
@@ -55,8 +57,9 @@
         max-width: 100%;
         border-radius: 20px;
         border: 2px solid rgba(255, 255, 255, .18);
-        box-shadow: 0 10px 40px rgba(255, 107, 157, .25);
+        box-shadow: 0 10px 40px rgba(214, 75, 255, .25);
       }
+      #resultado { cursor: pointer; }
       .emoji-grande { font-size: 5.2rem; line-height: 1; }
       .palabra-grande { font-size: 3rem; font-weight: 900; }
       .emoji-chico { font-size: 2.6rem; line-height: 1; }
@@ -73,24 +76,12 @@
         height: 100%;
         width: 0%;
         border-radius: 999px;
-        background: linear-gradient(90deg, #ffd166, #ff9f43);
+        background: linear-gradient(90deg, #22e07b, #a8ff5e);
         transition: width .25s ease;
       }
       .barra-confianza > div.barra-perro {
-        background: linear-gradient(90deg, #ff6b9d, #a26bff);
+        background: linear-gradient(90deg, #ff9966, #ff5e62);
       }
-      /* ---- Contadores para el video ---- */
-      .marcador {
-        font-size: 3.2rem;
-        font-weight: 900;
-        line-height: 1.1;
-      }
-      @keyframes golpe {
-        0%   { transform: scale(1); }
-        40%  { transform: scale(1.35); }
-        100% { transform: scale(1); }
-      }
-      .golpe { animation: golpe .4s ease; }
       @keyframes pulso {
         0%   { transform: scale(1); }
         45%  { transform: scale(1.18); }
@@ -98,88 +89,46 @@
       }
       .pulso { animation: pulso .45s ease; }
       .btn-ia {
-        background: linear-gradient(90deg, #ff6b9d, #a26bff);
+        background: linear-gradient(90deg, #7b2ff7, #d64bff);
         border: none;
         color: #fff;
         font-weight: 700;
         border-radius: 999px;
       }
       .btn-ia:hover, .btn-ia:focus { color: #fff; filter: brightness(1.12); }
-      .btn-contorno {
-        border: 1px solid rgba(255, 255, 255, .3);
-        color: #e8e2f0;
-        border-radius: 999px;
-        background: transparent;
-        font-weight: 600;
-      }
-      .btn-contorno:hover { color: #fff; background: rgba(255,255,255,.08); }
     </style>
   </head>
   <body>
 
     <main>
       <div class="px-3 pt-4 pb-2 text-center">
-        <h1 class="titulo-ia display-5 mb-1">¿Perro o Gato? 🐶🐱</h1>
-        <p class="texto-suave mb-0">Detector en tiempo real con IA &middot; TensorFlow.js &middot; 100% en tu navegador</p>
+        <h1 class="titulo-ia display-5 mb-1">Perros y Gatos 🐶🐱</h1>
+        <p class="texto-suave mb-0">Clasificador en tiempo real con IA &middot; TensorFlow.js &middot; 100% en tu navegador</p>
       </div>
 
-      <!-- ===== Cámara + resultado en vivo ===== -->
       <div class="container mt-3 mb-4">
         <div class="row justify-content-center">
           <div class="col-12 col-md-6 col-lg-5">
             <div class="tarjeta text-center p-3 p-md-4">
               <video id="video" playsinline autoplay style="width: 1px;"></video>
               <canvas id="canvas" width="400" height="400"></canvas>
-              <div id="resultado" class="mt-3" onclick="repetirAnuncio();" style="cursor: pointer;" title="Toca para escuchar el resultado otra vez">
+              <canvas id="otrocanvas" width="100" height="100" style="display: none"></canvas>
+              <div id="resultado" class="mt-3" title="Toca para escuchar el resultado otra vez">
                 <div class="emoji-grande" id="res-emoji">🤖</div>
                 <div class="palabra-grande" id="res-palabra">Cargando…</div>
                 <div class="barra-confianza"><div id="res-barra"></div></div>
                 <div class="texto-suave" id="res-conf">preparando modelo…</div>
-                <div class="texto-suave" style="font-size: .8rem;">🔊 toca aquí para escuchar el resultado</div>
-              </div>
-              <div class="d-flex justify-content-center mt-2">
-                <div class="form-check form-switch d-inline-flex align-items-center gap-2 mb-0">
-                  <input class="form-check-input" type="checkbox" role="switch" id="voz-toggle" checked onchange="cambiarVoz(this.checked);">
-                  <label class="form-check-label small" for="voz-toggle">🔊 Hablar al detectar (accesibilidad)</label>
-                </div>
               </div>
               <button class="btn btn-ia btn-lg w-100 mt-3" id="cambiar-camara" onclick="cambiarCamara();">🔄 Cambiar cámara</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ===== Contadores (para el video de TikTok) ===== -->
-      <div class="container mb-4">
-        <div class="row justify-content-center">
-          <div class="col-12 col-md-6 col-lg-5">
-            <div class="tarjeta text-center p-3 p-md-4">
-              <p class="mb-3 fw-bold">🏆 Marcador</p>
-              <div class="row align-items-center g-0">
-                <div class="col">
-                  <div style="font-size: 2.4rem; line-height: 1;">🐶</div>
-                  <div class="marcador" id="cnt-perro">0</div>
-                  <div class="texto-suave">Perros</div>
-                </div>
-                <div class="col-auto texto-suave fw-bold px-2">VS</div>
-                <div class="col">
-                  <div style="font-size: 2.4rem; line-height: 1;">🐱</div>
-                  <div class="marcador" id="cnt-gato">0</div>
-                  <div class="texto-suave">Gatos</div>
-                </div>
+              <div class="form-check form-switch mt-3">
+                <input class="form-check-input" type="checkbox" role="switch" id="voz-toggle" checked>
+                <label class="form-check-label small texto-suave" for="voz-toggle">🔊 Hablar al detectar (dice "¡Perro!" o "¡Gato!" con 80% o más de confianza)</label>
               </div>
-              <button class="btn btn-contorno w-100 mt-3" onclick="reiniciarContadores();">♻️ Reiniciar marcador</button>
-              <p class="texto-suave small mt-3 mb-0">
-                El marcador suma 1 cada vez que la detección <b>cambia</b>
-                (perro ↔ gato) con más del 75% de confianza.
-                Apunta la cámara a cada animal para que la IA lo cuente.
-              </p>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- ===== Prueba con una foto ===== -->
       <div class="container mb-4">
         <div class="row justify-content-center">
           <div class="col-12 col-md-6 col-lg-5">
@@ -187,109 +136,144 @@
               <p class="mb-2 fw-bold">📤 Prueba con una foto</p>
               <input type="file" id="foto-input" accept="image/*" class="form-control form-control-lg mb-3">
               <div id="resultado-foto" style="min-height: 4.5rem;"></div>
-              <p class="texto-suave small mb-0">Sube una foto donde el perro o el gato ocupe casi todo el encuadre. Esta prueba no suma en el marcador.</p>
+              <p class="texto-suave small mb-0">El modelo se entrenó con fotos de primer plano: muéstrale una foto de un perro o gato ocupando casi toda la pantalla, o súbela aquí.</p>
             </div>
           </div>
         </div>
       </div>
-      <canvas id="canvasfoto" width="96" height="96" style="display: none"></canvas>
+      <canvas id="canvasfoto" width="100" height="100" style="display: none"></canvas>
 
       <footer class="text-center py-4 mt-2">
-        <p class="texto-suave small mb-0">CNN entrenada en Google Colab &middot; Convertida a TensorFlow.js &middot; Dataset: Microsoft Cats vs Dogs</p>
+        <p class="texto-suave small mb-0">CNN entrenada en Google Colab &middot; Convertida a TensorFlow.js &middot; Basado en el tutorial de Ringa Tech</p>
       </footer>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
 
-    <!-- TensorFlow.js 4.x: compatible con el modelo convertido por el notebook -->
+    <!-- TensorFlow.js 4.x: compatible con modelos convertidos con tensorflowjs 3.x y 4.x -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
 
   <script type="text/javascript">
 
-    var tamano = 400;              // canvas de la cámara (se reduce a 96 al predecir)
+    var tamano = 400;
     var video = document.getElementById("video");
     var canvas = document.getElementById("canvas");
+    var otrocanvas = document.getElementById("otrocanvas");
     var canvasfoto = document.getElementById("canvasfoto");
     var ctx = canvas.getContext("2d");
     var currentStream = null;
     var facingMode = "user";
 
     var modelo = null;
-    var tamanoEntrada = 96;        // se ajusta solo al leer model.json (96x96 RGB)
-    var UMBRAL_CONFIANZA = 0.75;   // % mínimo para contar en el marcador
 
-    // ==========================================================
-    // CARGA DEL MODELO (manual, con rutas relativas)
-    // TensorFlow.js, al cargar "model.json" directamente, busca
-    // los shards .bin respecto a la RAÍZ del sitio y falla en
-    // GitHub Pages (usuario.github.io/repo/). Aquí los bajamos
-    // nosotros con fetch relativo y se los entregamos ya
-    // concatenados a tf.io.fromMemory. Funciona en localhost,
-    // en subcarpetas de GitHub Pages y en ngrok.
-    // ==========================================================
     (async() => {
       var resPalabra = document.getElementById("res-palabra");
       var resConf = document.getElementById("res-conf");
       resPalabra.textContent = "Cargando modelo…";
       try {
-        var respuesta = await fetch("model.json");
-        if (!respuesta.ok) throw new Error("model.json no encontrado (código " + respuesta.status + ")");
-        var info = await respuesta.json();
-
-        // 1) Tamaño de entrada desde la topología (batch_input_shape = [null, 96, 96, 3])
-        try {
-          var capas = info.modelTopology.model_config.config.layers;
-          for (var i = 0; i < capas.length; i++) {
-            var forma = (capas[i].config || {}).batch_input_shape;
-            if (forma && forma.length === 4) { tamanoEntrada = forma[1]; break; }
-          }
-        } catch (e) { /* si falla, queda el valor por defecto 96 */ }
-
-        // 2) Descargamos los shards de pesos con rutas relativas
-        var partes = [];
-        for (var g = 0; g < info.weightsManifest.length; g++) {
-          var rutas = info.weightsManifest[g].paths;
-          for (var p = 0; p < rutas.length; p++) {
-            var rBin = await fetch(rutas[p]);
-            if (!rBin.ok) throw new Error("No se pudo descargar " + rutas[p]);
-            partes.push(new Uint8Array(await rBin.arrayBuffer()));
-          }
-        }
-        var total = 0;
-        for (var t = 0; t < partes.length; t++) total += partes[t].length;
-        var weightData = new Uint8Array(total);
-        var offset = 0;
-        for (var w = 0; w < partes.length; w++) {
-          weightData.set(partes[w], offset);
-          offset += partes[w].length;
-        }
-
-        // 3) Cargamos el modelo con los bytes ya en memoria
-        modelo = await tf.loadLayersModel(tf.io.fromMemory({
-          modelTopology: info.modelTopology,
-          weightSpecs: info.weightsManifest.reduce(function(todo, g) { return todo.concat(g.weights); }, []),
-          weightData: weightData.buffer
-        }));
-
+        // Ruta ABSOLUTA del modelo: TensorFlow.js arma las URLs de los
+        // archivos .bin concatenando "carpeta de model.json + nombre".
+        // Si se le pasa solo "model.json" (sin carpeta) arma rutas de la
+        // raiz del sitio y da 404 al desplegar en subcarpetas (ej. GitHub
+        // Pages /perrosygatos/). Con URL absoluta funciona en cualquier
+        // servidor y carpeta.
+        var urlModelo = new URL("model.json", window.location.href).href;
+        modelo = await tf.loadLayersModel(urlModelo);
         resPalabra.textContent = "Modelo listo ✅";
         resConf.textContent = "iniciando cámara…";
-        console.log("Modelo cargado. Entrada:", tamanoEntrada + "x" + tamanoEntrada + " RGB");
+        console.log("Modelo cargado");
       } catch (e) {
         resPalabra.textContent = "Error cargando modelo";
-        resConf.textContent = "¿model.json y los .bin están junto a index.html? Ábrelo con un servidor local (no con doble clic)";
-        console.error("No se pudo cargar el modelo:", e);
+        resConf.textContent = "revisa que model.json esté junto a index.html";
+        console.error("No se pudo cargar model.json. Revisa que este junto a index.html", e);
       }
     })();
 
-    // ==========================================================
-    // CÁMARA
-    // ==========================================================
+    // ================================================================
+    // VOZ (agregado): cuando la detección estable llega a 80% o más de
+    // confianza y la clase CAMBIA respecto de la última que se dijo,
+    // la página dice en voz alta "¡Perro!" o "¡Gato!". Por debajo de
+    // 80% no dice nada (y no borra lo ya dicho, para no repetir cuando
+    // la confianza baja un momento). Tocar el resultado grande repite
+    // el último anuncio. El interruptor apaga la voz y queda guardado.
+    // ================================================================
+    var UMBRAL_VOZ = 80;                 // % mínimo para hablar (zona 80-100)
+    var vozOn = true;
+    try { vozOn = localStorage.getItem("pg_voz") !== "0"; } catch (e) {}
+    var fraseActual = "";                // último texto dicho (para repetirlo)
+    var ultimaClaseDicha = null;         // "Perro" / "Gato" ya anunciados
+    var vozEspanol = null;
+
+    function elegirVozEspanol() {
+      if (!("speechSynthesis" in window)) return;
+      var voces = speechSynthesis.getVoices();
+      vozEspanol = null;
+      for (var i = 0; i < voces.length; i++) {
+        if (/^es([-_]|$)/i.test(voces[i].lang)) { vozEspanol = voces[i]; break; }
+      }
+    }
+    if ("speechSynthesis" in window) {
+      elegirVozEspanol();
+      speechSynthesis.onvoiceschanged = elegirVozEspanol;
+    }
+
+    function decir(texto) {
+      if (!vozOn || !("speechSynthesis" in window)) return;
+      fraseActual = texto;
+      try { speechSynthesis.cancel(); } catch (e) {}
+      // pequeño delay: evita un bug de Chrome donde cancel() + speak()
+      // seguidos hacen que la voz no suene
+      setTimeout(function() {
+        var u = new SpeechSynthesisUtterance(texto);
+        u.lang = "es-ES";
+        if (vozEspanol) u.voice = vozEspanol;
+        u.rate = 1;
+        u.pitch = 1;
+        speechSynthesis.speak(u);
+      }, 80);
+    }
+
+    function anunciar(probEstable) {
+      var conf = Math.round((probEstable > .5 ? probEstable : 1 - probEstable) * 100);
+      if (conf < UMBRAL_VOZ) return;               // solo zona 80-100
+      var clase = probEstable > .5 ? "Perro" : "Gato";
+      if (clase === ultimaClaseDicha) return;      // no repetir la misma
+      ultimaClaseDicha = clase;
+      decir("¡" + clase + "!");
+      if (vozOn) console.log("Voz: " + clase + " (" + conf + "%)");
+    }
+
+    // interruptor de la interfaz (si lo enciendes, confirma hablando)
+    var vozToggle = document.getElementById("voz-toggle");
+    vozToggle.checked = vozOn;
+    vozToggle.addEventListener("change", function() {
+      vozOn = vozToggle.checked;
+      try { localStorage.setItem("pg_voz", vozOn ? "1" : "0"); } catch (e) {}
+      if (vozOn) {
+        // resetea el anuncio anterior para que el próximo resultado con
+        // 80%+ se diga aunque sea la misma clase que había antes
+        ultimaClaseDicha = null;
+        decir("Voz activada");
+      }
+    });
+
+    // tocar el resultado repite el último anuncio (en el celular esta
+    // primera interacción también desbloquea el audio del navegador)
+    document.getElementById("resultado").addEventListener("click", function() {
+      if (fraseActual) decir(fraseActual);
+    });
+
     window.onload = function() {
       mostrarCamara();
     }
 
     function mostrarCamara() {
-      var opciones = { audio: false, video: { width: tamano, height: tamano } };
+      var opciones = {
+        audio: false,
+        video: {
+          width: tamano, height: tamano
+        }
+      }
 
       if (navigator.mediaDevices.getUserMedia) {
         navigator.mediaDevices.getUserMedia(opciones)
@@ -302,6 +286,7 @@
             .catch(function(err) {
               alert("No se pudo utilizar la camara :(");
               console.log(err);
+              alert(err);
             })
       } else {
         alert("No existe la funcion getUserMedia");
@@ -309,57 +294,83 @@
     }
 
     function cambiarCamara() {
-      if (currentStream) {
-        currentStream.getTracks().forEach(function(track) { track.stop(); });
+          if (currentStream) {
+              currentStream.getTracks().forEach(track => {
+                  track.stop();
+              });
+          }
+
+          facingMode = facingMode == "user" ? "environment" : "user";
+
+          var opciones = {
+              audio: false,
+              video: {
+                  facingMode: facingMode, width: tamano, height: tamano
+              }
+          };
+
+
+          navigator.mediaDevices.getUserMedia(opciones)
+              .then(function(stream) {
+                  currentStream = stream;
+                  video.srcObject = currentStream;
+              })
+              .catch(function(err) {
+                  console.log("Oops, hubo un error", err);
+              })
       }
-
-      facingMode = facingMode == "user" ? "environment" : "user";
-
-      var opciones = {
-        audio: false,
-        video: { facingMode: facingMode, width: tamano, height: tamano }
-      };
-
-      navigator.mediaDevices.getUserMedia(opciones)
-          .then(function(stream) {
-            currentStream = stream;
-            video.srcObject = currentStream;
-          })
-          .catch(function(err) {
-            console.log("Oops, hubo un error", err);
-          })
-    }
 
     function procesarCamara() {
       ctx.drawImage(video, 0, 0, tamano, tamano, 0, 0, tamano, tamano);
       setTimeout(procesarCamara, 20);
     }
 
-    // ==========================================================
-    // PREDICCIÓN
-    // La entrada del modelo es 96x96 RGB con valores 0-255:
-    // la normalización (Rescaling 1/255) vive DENTRO del modelo,
-    // por eso aquí NO se dividen los píxeles entre 255.
-    // Devuelve la probabilidad cruda: >= 0.5 perro, < 0.5 gato.
-    // ==========================================================
+    // Clasifica cualquier canvas cuadrado de 100x100 y devuelve la probabilidad
+    // cruda (0 = gato, 1 = perro). Misma conversión a gris que en el entrenamiento.
     function clasificarDesde(canvasOrigen) {
-      var tensor = tf.browser.fromPixels(canvasOrigen)
-          .toFloat()
-          .resizeBilinear([tamanoEntrada, tamanoEntrada])
-          .expandDims(0);
+      var ctx2 = canvasOrigen.getContext("2d");
+      var ancho = canvasOrigen.width;   // debe ser 100: tamaño con el que se entrenó
+      var alto = canvasOrigen.height;   // debe ser 100
+      var imgData = ctx2.getImageData(0, 0, ancho, alto);
+
+      var arr = [];
+
+      for (var y = 0; y < alto; y++) {
+        var fila = [];
+        for (var x = 0; x < ancho; x++) {
+          var p = (y * ancho + x) * 4;
+          var rojo = imgData.data[p] / 255;
+          var verde = imgData.data[p+1] / 255;
+          var azul = imgData.data[p+2] / 255;
+
+          // Mismos pesos que tf.image.rgb_to_grayscale en el entrenamiento
+          var gris = (0.2989 * rojo) + (0.587 * verde) + (0.114 * azul);
+
+          fila.push([gris]);
+        }
+        arr.push(fila);
+      }
+
+      arr = [arr];
+
+      var tensor = tf.tensor4d(arr);
       var salida = modelo.predict(tensor);
-      var prob = salida.dataSync()[0];
+      var resultado = salida.dataSync();
+      // Liberar memoria: esta funcion corre ~6 veces por segundo
       salida.dispose();
       tensor.dispose();
-      return prob;
+
+      return resultado[0];
     }
 
-    // Historial para estabilizar el resultado en vivo: mediana de las
-    // últimas 7 predicciones para que el texto no parpadee
+    // Historial para estabilizar el resultado en vivo: usa la mediana de las
+    // últimas 7 predicciones para que el texto no parpadee cada 150 ms
     var historial = [];
 
+    // Pinta el resultado en la interfaz: emoji gigante + palabra + barra
+    // de confianza con color distinto para perro (naranja) y gato (verde)
     function pintarResultado(prob, destino, chico) {
-      var esPerro = prob >= 0.5;
+      var esPerro = prob > .5;
       var emoji = esPerro ? "🐶" : "🐱";
       var palabra = esPerro ? "Perro" : "Gato";
       var confianza = Math.round((esPerro ? prob : 1 - prob) * 100);
@@ -374,175 +385,41 @@
           emojiEl.textContent = emoji;
           palabraEl.textContent = palabra;
           emojiEl.classList.remove("pulso");
-          void emojiEl.offsetWidth; // reinicia la animación
+          void emojiEl.offsetWidth; // reinicia la animación de pulso
           emojiEl.classList.add("pulso");
         }
         var barra = document.getElementById("res-barra");
         barra.className = claseBarra;
         barra.style.width = confianza + "%";
-        document.getElementById("res-conf").textContent =
-          confianza + "% de confianza · prob = " + prob.toFixed(4);
+        document.getElementById("res-conf").textContent = confianza + "% de confianza";
       } else {
         document.getElementById("resultado-foto").innerHTML =
           '<div class="' + claseEmoji + '">' + emoji + '</div>' +
           '<div class="' + clasePalabra + '">' + palabra + '</div>' +
           '<div class="barra-confianza"><div class="' + claseBarra + '" style="width:' + confianza + '%"></div></div>' +
-          '<div class="texto-suave small">' + confianza + '% de confianza · prob = ' + prob.toFixed(4) + '</div>';
-      }
-    }
-
-    // ==========================================================
-    // VOZ (accesibilidad + momento estrella del video)
-    // Usa la Web Speech API que ya trae el navegador: gratis, sin
-    // servidores y funciona en el celular. Cuando la detección
-    // estable cambia (la misma condición del marcador), la página
-    // dice en voz alta qué vio. Se puede silenciar con el
-    // interruptor, y tocar el resultado repite el anuncio con el
-    // porcentaje de confianza.
-    // ==========================================================
-    var vozActivada = true;
-    try {
-      vozActivada = localStorage.getItem("pg_voz") != "no";
-    } catch (e) { /* sin almacenamiento: la voz queda activada */ }
-
-    var vozElegida = null;
-    var fraseActual = null;
-
-    function prepararVoz() {
-      if (!("speechSynthesis" in window)) {
-        var interruptor = document.getElementById("voz-toggle");
-        if (interruptor) interruptor.parentElement.style.display = "none";
-        return; // navegador sin voz: todo lo demás sigue igual
-      }
-      // Chrome carga la lista de voces de forma asíncrona
-      speechSynthesis.onvoiceschanged = function() {
-        var voces = speechSynthesis.getVoices();
-        vozElegida = null;
-        for (var i = 0; i < voces.length; i++) {
-          if (voces[i].lang && voces[i].lang.toLowerCase().indexOf("es") == 0) {
-            vozElegida = voces[i];
-            break;
-          }
-        }
-      };
-      speechSynthesis.getVoices();
-    }
-
-    function hablar(texto) {
-      if (!vozActivada || !("speechSynthesis" in window)) return;
-      try {
-        speechSynthesis.cancel();  // corta la frase anterior
-        var frase = new SpeechSynthesisUtterance(texto);
-        frase.lang = "es-ES";
-        if (vozElegida) frase.voice = vozElegida;
-        frase.rate = 1;
-        frase.pitch = 1.05;
-        fraseActual = frase;
-        // Chrome ignora la frase nueva si se habla justo tras cancel():
-        // se programa con una guarda para descartar órdenes ya superadas
-        setTimeout(function() {
-          if (fraseActual == frase) speechSynthesis.speak(frase);
-        }, 80);
-      } catch (e) { /* sin motor de voz: la web sigue funcionando */ }
-    }
-
-    function cambiarVoz(activada) {
-      vozActivada = activada;
-      try {
-        localStorage.setItem("pg_voz", activada ? "si" : "no");
-      } catch (e) {}
-      if ("speechSynthesis" in window) {
-        speechSynthesis.cancel();
-        if (activada) hablar("Voz activada");
-      }
-    }
-
-    var ultimaConfianza = 0;
-
-    function repetirAnuncio() {
-      if (ultimaClase == null) return;   // todavía no hay detección estable
-      var porcentaje = Math.round(ultimaConfianza * 100);
-      hablar("¡Es un " + (ultimaClase == "perro" ? "perro" : "gato") + "! " + porcentaje + "% de confianza");
-    }
-
-    // ==========================================================
-    // MARCADOR (contadores para el TikTok)
-    // Suma 1 cuando la clase estable CAMBIA (perro <-> gato) y la
-    // confianza supera el umbral. Se guarda en localStorage para no
-    // perder el marcador al recargar. Reiniciar pone los números a
-    // cero Y limpia la última clase detectada: si no, tras reiniciar
-    // no volvería a contar hasta cambiar de animal.
-    // ==========================================================
-    var contadores = { perro: 0, gato: 0 };
-    var ultimaClase = null;
-
-    function cargarContadores() {
-      try {
-        contadores.perro = parseInt(localStorage.getItem("pg_perros")) || 0;
-        contadores.gato = parseInt(localStorage.getItem("pg_gatos")) || 0;
-      } catch (e) { /* localStorage bloqueado: el marcador vive solo en memoria */ }
-      pintarContadores();
-    }
-
-    function guardarContadores() {
-      try {
-        localStorage.setItem("pg_perros", contadores.perro);
-        localStorage.setItem("pg_gatos", contadores.gato);
-      } catch (e) { /* sin almacenamiento: no pasa nada grave */ }
-    }
-
-    function pintarContadores(claseNueva) {
-      var elPerro = document.getElementById("cnt-perro");
-      var elGato = document.getElementById("cnt-gato");
-      elPerro.textContent = contadores.perro;
-      elGato.textContent = contadores.gato;
-      if (claseNueva) {
-        var el = claseNueva == "perro" ? elPerro : elGato;
-        el.classList.remove("golpe");
-        void el.offsetWidth; // reinicia la animación
-        el.classList.add("golpe");
-      }
-    }
-
-    function reiniciarContadores() {
-      contadores.perro = 0;
-      contadores.gato = 0;
-      ultimaClase = null;   // <- imprescindible: permite volver a contar tras reiniciar
-      guardarContadores();
-      pintarContadores();
-    }
-
-    function contarSiCambia(esPerro, confianza) {
-      if (confianza < UMBRAL_CONFIANZA) return; // imagen poco clara: no cuenta ni habla
-      var clase = esPerro ? "perro" : "gato";
-      if (clase != ultimaClase) {
-        contadores[clase]++;
-        ultimaClase = clase;
-        ultimaConfianza = confianza;
-        guardarContadores();
-        pintarContadores(clase);
-        hablar(esPerro ? "¡Es un perro!" : "¡Es un gato!");
+          '<div class="texto-suave small">' + confianza + '% &middot; prob=' + prob.toFixed(4) + '</div>';
       }
     }
 
     function predecir() {
       if (modelo != null) {
-        var prob = clasificarDesde(canvas);
+        resample_single(canvas, 100, 100, otrocanvas);
+
+        var prob = clasificarDesde(otrocanvas);
+
         historial.push(prob);
         if (historial.length > 7) historial.shift();
         var ordenado = historial.slice().sort();
         var probEstable = ordenado[Math.floor(ordenado.length / 2)];
 
         pintarResultado(probEstable, "resultado", false);
-        contarSiCambia(probEstable >= 0.5, probEstable >= 0.5 ? probEstable : 1 - probEstable);
+        anunciar(probEstable);
       }
 
       setTimeout(predecir, 150);
     }
 
-    // ==========================================================
-    // PRUEBA CON UNA FOTO (no suma en el marcador)
-    // ==========================================================
+    // ---- Prueba con una foto (botón de archivo) ----
     document.getElementById("foto-input").addEventListener("change", function(e) {
       var archivo = e.target.files[0];
       if (!archivo) return;
@@ -554,14 +431,14 @@
       var url = URL.createObjectURL(archivo);
       var img = new Image();
       img.onload = function() {
-        // Recorte cuadrado centrado (como las fotos del dataset) y tamaño 96x96
+        // Recorte cuadrado centrado (como las fotos del dataset) y resize a 100x100
         var cf = canvasfoto.getContext("2d");
         var lado = Math.min(img.width, img.height);
         var sx = (img.width - lado) / 2;
         var sy = (img.height - lado) / 2;
         cf.fillStyle = "#ffffff";
-        cf.fillRect(0, 0, tamanoEntrada, tamanoEntrada);
-        cf.drawImage(img, sx, sy, lado, lado, 0, 0, tamanoEntrada, tamanoEntrada);
+        cf.fillRect(0, 0, 100, 100);
+        cf.drawImage(img, sx, sy, lado, lado, 0, 0, 100, 100);
 
         var prob = clasificarDesde(canvasfoto);
         pintarResultado(prob, "resultado-foto", true);
@@ -574,13 +451,84 @@
       img.src = url;
     });
 
-    cargarContadores();
+    /**
+       * Hermite resize - fast image resize/resample using Hermite filter. 1 cpu version!
+       *
+       * @param {HtmlElement} canvas
+       * @param {int} width
+       * @param {int} height
+       * @param {boolean} resize_canvas if true, canvas will be resized. Optional.
+       * Cambiado por RT, resize canvas ahora es donde se pone el chiqitillllllo
+       */
+      function resample_single(canvas, width, height, resize_canvas) {
+          var width_source = canvas.width;
+          var height_source = canvas.height;
+          width = Math.round(width);
+          height = Math.round(height);
 
-    (function inicializarVoz() {
-      var interruptor = document.getElementById("voz-toggle");
-      if (interruptor) interruptor.checked = vozActivada;
-      prepararVoz();
-    })();
+          var ratio_w = width_source / width;
+          var ratio_h = height_source / height;
+          var ratio_w_half = Math.ceil(ratio_w / 2);
+          var ratio_h_half = Math.ceil(ratio_h / 2);
+
+          var ctx = canvas.getContext("2d");
+          var ctx2 = resize_canvas.getContext("2d");
+          var img = ctx.getImageData(0, 0, width_source, height_source);
+          var img2 = ctx2.createImageData(width, height);
+          var data = img.data;
+          var data2 = img2.data;
+
+          for (var j = 0; j < height; j++) {
+              for (var i = 0; i < width; i++) {
+                  var x2 = (i + j * width) * 4;
+                  var weight = 0;
+                  var weights = 0;
+                  var weights_alpha = 0;
+                  var gx_r = 0;
+                  var gx_g = 0;
+                  var gx_b = 0;
+                  var gx_a = 0;
+                  var center_y = (j + 0.5) * ratio_h;
+                  var yy_start = Math.floor(j * ratio_h);
+                  var yy_stop = Math.ceil((j + 1) * ratio_h);
+                  for (var yy = yy_start; yy < yy_stop; yy++) {
+                      var dy = Math.abs(center_y - (yy + 0.5)) / ratio_h_half;
+                      var center_x = (i + 0.5) * ratio_w;
+                      var w0 = dy * dy; //pre-calc part of w
+                      var xx_start = Math.floor(i * ratio_w);
+                      var xx_stop = Math.ceil((i + 1) * ratio_w);
+                      for (var xx = xx_start; xx < xx_stop; xx++) {
+                          var dx = Math.abs(center_x - (xx + 0.5)) / ratio_w_half;
+                          var w = Math.sqrt(w0 + dx * dx);
+                          if (w >= 1) {
+                              //pixel too far
+                              continue;
+                          }
+                          //hermite filter
+                          weight = 2 * w * w * w - 3 * w * w + 1;
+                          var pos_x = 4 * (xx + yy * width_source);
+                          //alpha
+                          gx_a += weight * data[pos_x + 3];
+                          weights_alpha += weight;
+                          //colors
+                          if (data[pos_x + 3] < 255)
+                              weight = weight * data[pos_x + 3] / 250;
+                          gx_r += weight * data[pos_x];
+                          gx_g += weight * data[pos_x + 1];
+                          gx_b += weight * data[pos_x + 2];
+                          weights += weight;
+                      }
+                  }
+                  data2[x2] = gx_r / weights;
+                  data2[x2 + 1] = gx_g / weights;
+                  data2[x2 + 2] = gx_b / weights;
+                  data2[x2 + 3] = gx_a / weights_alpha;
+              }
+          }
+
+
+          ctx2.putImageData(img2, 0, 0);
+      }
   </script>
   </body>
 </html>
